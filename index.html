@@ -167,7 +167,7 @@
     <span class="image-count" id="image-count"></span>
     <label>
       Max images
-      <input type="number" id="max-images" min="1" max="50" value="6">
+      <input type="number" id="max-images" min="1" max="50" value="19">
     </label>
     <button class="upload-btn" id="upload-btn">Upload Images</button>
     <button class="clear-btn" id="clear-btn">Clear All</button>
@@ -193,7 +193,7 @@
     const emptyState = document.getElementById('empty-state');
     const imageCountEl = document.getElementById('image-count');
 
-    // Each entry: { id, dataUrl }
+    // Each entry: { id, dataUrl, aspect } where aspect = width/height
     let images = [];
     let nextId = 0;
 
@@ -206,20 +206,27 @@
     fileInput.addEventListener('change', (e) => {
       const files = Array.from(e.target.files);
       if (!files.length) return;
+      loadImageFiles(files);
+      fileInput.value = '';
+    });
 
+    function loadImageFiles(files) {
       let loaded = 0;
       files.forEach((file) => {
         const reader = new FileReader();
         reader.onload = (ev) => {
-          addImage(ev.target.result);
-          loaded++;
-          if (loaded === files.length) render();
+          const img = new Image();
+          img.onload = () => {
+            const aspect = img.naturalWidth / img.naturalHeight;
+            addImage(ev.target.result, aspect);
+            loaded++;
+            if (loaded === files.length) render();
+          };
+          img.src = ev.target.result;
         };
         reader.readAsDataURL(file);
       });
-
-      fileInput.value = '';
-    });
+    }
 
     maxImagesInput.addEventListener('change', () => {
       const max = getMax();
@@ -231,12 +238,12 @@
 
     function getMax() {
       const val = parseInt(maxImagesInput.value, 10);
-      return Math.max(1, isNaN(val) ? 6 : val);
+      return Math.max(1, isNaN(val) ? 19 : val);
     }
 
-    function addImage(dataUrl) {
+    function addImage(dataUrl, aspect) {
       const max = getMax();
-      images.push({ id: nextId++, dataUrl });
+      images.push({ id: nextId++, dataUrl, aspect });
       if (images.length > max) {
         images = images.slice(images.length - max);
       }
@@ -247,31 +254,68 @@
       render();
     }
 
-    function computeLayout(count) {
-      // Determine rows/cols to fill a rectangle with minimal aspect-ratio distortion.
-      // Try to keep cells as square as possible given the viewport.
-      if (count === 0) return { cols: 0, rows: 0 };
+    // Justified row-packing layout that fills the entire viewport
+    // while respecting each image's natural aspect ratio.
+    function computeJustifiedLayout(images, containerWidth, containerHeight) {
+      const n = images.length;
+      if (n === 0) return [];
 
-      const vw = window.innerWidth;
-      const vh = window.innerHeight - 61; // subtract controls height
+      // Target row height to aim for (we'll scale to fill viewport after)
+      const targetRowHeight = containerHeight / Math.max(1, Math.round(Math.sqrt(n * containerHeight / containerWidth)));
 
-      let bestCols = 1;
-      let bestScore = Infinity;
+      // Greedily pack images into rows
+      const rows = [];
+      let row = [];
+      let rowAspectSum = 0;
 
-      for (let cols = 1; cols <= count; cols++) {
-        const rows = Math.ceil(count / cols);
-        const cellW = vw / cols;
-        const cellH = vh / rows;
-        const ratio = cellW / cellH;
-        // Score: how far from square (1:1)
-        const score = Math.abs(Math.log(ratio));
-        if (score < bestScore) {
-          bestScore = score;
-          bestCols = cols;
+      for (let i = 0; i < n; i++) {
+        row.push(images[i]);
+        rowAspectSum += images[i].aspect;
+
+        const rowWidth = rowAspectSum * targetRowHeight;
+        if (rowWidth >= containerWidth && row.length > 0) {
+          rows.push({ items: row, aspectSum: rowAspectSum });
+          row = [];
+          rowAspectSum = 0;
         }
       }
+      if (row.length > 0) {
+        rows.push({ items: row, aspectSum: rowAspectSum });
+      }
 
-      return { cols: bestCols, rows: Math.ceil(count / bestCols) };
+      // Calculate natural row heights (each row fills full width)
+      const naturalHeights = rows.map(r => containerWidth / r.aspectSum);
+      const totalNaturalHeight = naturalHeights.reduce((a, b) => a + b, 0);
+
+      // Scale all rows uniformly to fill exact viewport height
+      const scale = containerHeight / totalNaturalHeight;
+
+      const layout = [];
+      let y = 0;
+
+      rows.forEach((r, ri) => {
+        const rowHeight = naturalHeights[ri] * scale;
+        let x = 0;
+
+        r.items.forEach((img, ii) => {
+          // Last item in row takes remaining width to avoid subpixel gaps
+          const itemWidth = (ii === r.items.length - 1)
+            ? containerWidth - x
+            : (img.aspect / r.aspectSum) * containerWidth;
+
+          layout.push({
+            id: img.id,
+            dataUrl: img.dataUrl,
+            x, y,
+            width: itemWidth,
+            height: rowHeight
+          });
+          x += itemWidth;
+        });
+        y += rowHeight;
+      });
+
+      return layout;
     }
 
     function render() {
@@ -285,16 +329,16 @@
         return;
       }
 
-      const { cols, rows } = computeLayout(count);
-      const cellWidthPct = 100 / cols;
+      const vw = window.innerWidth;
       const vh = window.innerHeight - 61;
-      const cellHeight = vh / rows;
 
-      let html = '<div class="collage">';
-      images.forEach((img) => {
-        html += `<div class="collage-item" style="width:${cellWidthPct}%;height:${cellHeight}px">
-          <img src="${img.dataUrl}" alt="collage image">
-          <button class="remove-btn" onclick="removeImage(${img.id})">&times;</button>
+      const layout = computeJustifiedLayout(images, vw, vh);
+
+      let html = '<div class="collage" style="position:relative;width:100%;height:' + vh + 'px;overflow:hidden">';
+      layout.forEach((item) => {
+        html += `<div class="collage-item" style="position:absolute;left:${item.x}px;top:${item.y}px;width:${item.width}px;height:${item.height}px">
+          <img src="${item.dataUrl}" alt="collage image">
+          <button class="remove-btn" onclick="removeImage(${item.id})">&times;</button>
         </div>`;
       });
       html += '</div>';
@@ -316,17 +360,7 @@
       e.preventDefault();
       const files = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith('image/'));
       if (!files.length) return;
-
-      let loaded = 0;
-      files.forEach((file) => {
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-          addImage(ev.target.result);
-          loaded++;
-          if (loaded === files.length) render();
-        };
-        reader.readAsDataURL(file);
-      });
+      loadImageFiles(files);
     });
 
     render();
