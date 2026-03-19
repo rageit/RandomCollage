@@ -193,7 +193,7 @@
     const emptyState = document.getElementById('empty-state');
     const imageCountEl = document.getElementById('image-count');
 
-    // Each entry: { id, dataUrl, aspect } where aspect = width/height
+    // Each entry: { id, dataUrl, aspect, area } where aspect = width/height, area = pixel count
     let images = [];
     let nextId = 0;
 
@@ -218,7 +218,8 @@
           const img = new Image();
           img.onload = () => {
             const aspect = img.naturalWidth / img.naturalHeight;
-            addImage(ev.target.result, aspect);
+            const area = img.naturalWidth * img.naturalHeight;
+            addImage(ev.target.result, aspect, area);
             loaded++;
             if (loaded === files.length) render();
           };
@@ -241,9 +242,9 @@
       return Math.max(1, isNaN(val) ? 19 : val);
     }
 
-    function addImage(dataUrl, aspect) {
+    function addImage(dataUrl, aspect, area) {
       const max = getMax();
-      images.push({ id: nextId++, dataUrl, aspect });
+      images.push({ id: nextId++, dataUrl, aspect, area });
       if (images.length > max) {
         images = images.slice(images.length - max);
       }
@@ -256,35 +257,48 @@
 
     // Justified row-packing layout that fills the entire viewport
     // while respecting each image's natural aspect ratio.
+    // Larger photos (by pixel area) get up to 20% more real estate.
     function computeJustifiedLayout(images, containerWidth, containerHeight) {
       const n = images.length;
       if (n === 0) return [];
 
+      // Compute weight per image: largest gets 1.2x, smallest gets 1.0x
+      const areas = images.map(img => img.area || 1);
+      const minArea = Math.min(...areas);
+      const maxArea = Math.max(...areas);
+      const areaRange = maxArea - minArea;
+
+      const weighted = images.map(img => {
+        const t = areaRange > 0 ? ((img.area || 1) - minArea) / areaRange : 0;
+        const weight = 1.0 + t * 0.2; // 1.0 to 1.2
+        return { ...img, weightedAspect: img.aspect * weight, weight };
+      });
+
       // Target row height to aim for (we'll scale to fill viewport after)
       const targetRowHeight = containerHeight / Math.max(1, Math.round(Math.sqrt(n * containerHeight / containerWidth)));
 
-      // Greedily pack images into rows
+      // Greedily pack images into rows using weighted aspects
       const rows = [];
       let row = [];
-      let rowAspectSum = 0;
+      let rowWeightedSum = 0;
 
       for (let i = 0; i < n; i++) {
-        row.push(images[i]);
-        rowAspectSum += images[i].aspect;
+        row.push(weighted[i]);
+        rowWeightedSum += weighted[i].weightedAspect;
 
-        const rowWidth = rowAspectSum * targetRowHeight;
+        const rowWidth = rowWeightedSum * targetRowHeight;
         if (rowWidth >= containerWidth && row.length > 0) {
-          rows.push({ items: row, aspectSum: rowAspectSum });
+          rows.push({ items: row, weightedSum: rowWeightedSum });
           row = [];
-          rowAspectSum = 0;
+          rowWeightedSum = 0;
         }
       }
       if (row.length > 0) {
-        rows.push({ items: row, aspectSum: rowAspectSum });
+        rows.push({ items: row, weightedSum: rowWeightedSum });
       }
 
       // Calculate natural row heights (each row fills full width)
-      const naturalHeights = rows.map(r => containerWidth / r.aspectSum);
+      const naturalHeights = rows.map(r => containerWidth / r.weightedSum);
       const totalNaturalHeight = naturalHeights.reduce((a, b) => a + b, 0);
 
       // Scale all rows uniformly to fill exact viewport height
@@ -301,7 +315,7 @@
           // Last item in row takes remaining width to avoid subpixel gaps
           const itemWidth = (ii === r.items.length - 1)
             ? containerWidth - x
-            : (img.aspect / r.aspectSum) * containerWidth;
+            : (img.weightedAspect / r.weightedSum) * containerWidth;
 
           layout.push({
             id: img.id,
