@@ -252,12 +252,12 @@
 
     // Justified row-packing layout that fills the entire viewport
     // while respecting each image's natural aspect ratio.
-    // Larger photos (by pixel area) get up to 20% more real estate.
+    // Larger photos (by pixel area) get up to 15% more real estate.
     function computeJustifiedLayout(images, containerWidth, containerHeight) {
       const n = images.length;
       if (n === 0) return [];
 
-      // Compute weight per image: largest gets 1.2x, smallest gets 1.0x
+      // Compute weight per image: largest gets 1.15x, smallest gets 1.0x
       const areas = images.map(img => img.area || 1);
       const minArea = Math.min(...areas);
       const maxArea = Math.max(...areas);
@@ -265,7 +265,7 @@
 
       const weighted = images.map(img => {
         const t = areaRange > 0 ? ((img.area || 1) - minArea) / areaRange : 0;
-        const weight = 1.0 + t * 0.2; // 1.0 to 1.2
+        const weight = 1.0 + t * 0.15; // 1.0 to 1.15
         return { ...img, weightedAspect: img.aspect * weight, weight };
       });
 
