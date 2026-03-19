@@ -211,12 +211,15 @@
     });
 
     async function uploadFiles(files) {
+      const max = getMax();
+      const remaining = max - images.length;
+      if (remaining <= 0) return;
+      const limited = files.slice(0, remaining);
       const formData = new FormData();
-      files.forEach(f => formData.append('images', f));
+      limited.forEach(f => formData.append('images', f));
       const res = await fetch('/api/images', { method: 'POST', body: formData });
       const added = await res.json();
       images.push(...added);
-      const max = getMax();
       if (images.length > max) images = images.slice(images.length - max);
       render();
     }
@@ -290,6 +293,31 @@
       }
       if (row.length > 0) {
         rows.push({ items: row, weightedSum: rowWeightedSum });
+      }
+
+      // Rebalance: if the last row would be disproportionately tall,
+      // redistribute images from the previous row to even things out.
+      if (rows.length >= 2) {
+        const last = rows[rows.length - 1];
+        const prev = rows[rows.length - 2];
+        const lastH = containerWidth / last.weightedSum;
+        const prevH = containerWidth / prev.weightedSum;
+
+        // If last row is more than 1.5x taller than the previous row, rebalance
+        if (lastH > prevH * 1.5 && prev.items.length >= 2) {
+          const combined = [...prev.items, ...last.items];
+          const half = Math.ceil(combined.length / 2);
+          const newPrev = combined.slice(0, half);
+          const newLast = combined.slice(half);
+          rows[rows.length - 2] = {
+            items: newPrev,
+            weightedSum: newPrev.reduce((s, img) => s + img.weightedAspect, 0)
+          };
+          rows[rows.length - 1] = {
+            items: newLast,
+            weightedSum: newLast.reduce((s, img) => s + img.weightedAspect, 0)
+          };
+        }
       }
 
       // Calculate natural row heights (each row fills full width)
