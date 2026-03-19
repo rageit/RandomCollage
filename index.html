@@ -200,6 +200,7 @@
     uploadBtn.addEventListener('click', () => fileInput.click());
     clearBtn.addEventListener('click', () => {
       images = [];
+      localStorage.removeItem('collage-images');
       render();
     });
 
@@ -221,7 +222,7 @@
             const area = img.naturalWidth * img.naturalHeight;
             addImage(ev.target.result, aspect, area);
             loaded++;
-            if (loaded === files.length) render();
+            if (loaded === files.length) { saveImages(); render(); }
           };
           img.src = ev.target.result;
         };
@@ -233,6 +234,7 @@
       const max = getMax();
       if (images.length > max) {
         images = images.slice(images.length - max);
+        saveImages();
       }
       render();
     });
@@ -240,6 +242,29 @@
     function getMax() {
       const val = parseInt(maxImagesInput.value, 10);
       return Math.max(1, isNaN(val) ? 19 : val);
+    }
+
+    function saveImages() {
+      try {
+        const data = images.map(({ id, dataUrl, aspect, area }) => ({ id, dataUrl, aspect, area }));
+        localStorage.setItem('collage-images', JSON.stringify(data));
+      } catch (e) {
+        // localStorage may be full; silently ignore
+      }
+    }
+
+    function loadSavedImages() {
+      try {
+        const raw = localStorage.getItem('collage-images');
+        if (!raw) return;
+        const data = JSON.parse(raw);
+        if (Array.isArray(data) && data.length > 0) {
+          images = data;
+          nextId = Math.max(...images.map(i => i.id)) + 1;
+        }
+      } catch (e) {
+        // corrupted data; start fresh
+      }
     }
 
     function addImage(dataUrl, aspect, area) {
@@ -252,6 +277,7 @@
 
     function removeImage(id) {
       images = images.filter((img) => img.id !== id);
+      saveImages();
       render();
     }
 
@@ -377,6 +403,7 @@
       loadImageFiles(files);
     });
 
+    loadSavedImages();
     render();
   </script>
 </body>
