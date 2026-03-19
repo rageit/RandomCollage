@@ -193,48 +193,44 @@
     const emptyState = document.getElementById('empty-state');
     const imageCountEl = document.getElementById('image-count');
 
-    // Each entry: { id, dataUrl, aspect, area } where aspect = width/height, area = pixel count
+    // Each entry: { id, filename, aspect, area }
     let images = [];
-    let nextId = 0;
 
     uploadBtn.addEventListener('click', () => fileInput.click());
-    clearBtn.addEventListener('click', () => {
+    clearBtn.addEventListener('click', async () => {
+      await fetch('/api/images', { method: 'DELETE' });
       images = [];
-      localStorage.removeItem('collage-images');
       render();
     });
 
     fileInput.addEventListener('change', (e) => {
       const files = Array.from(e.target.files);
       if (!files.length) return;
-      loadImageFiles(files);
+      uploadFiles(files);
       fileInput.value = '';
     });
 
-    function loadImageFiles(files) {
-      let loaded = 0;
-      files.forEach((file) => {
-        const reader = new FileReader();
-        reader.onload = (ev) => {
-          const img = new Image();
-          img.onload = () => {
-            const aspect = img.naturalWidth / img.naturalHeight;
-            const area = img.naturalWidth * img.naturalHeight;
-            addImage(ev.target.result, aspect, area);
-            loaded++;
-            if (loaded === files.length) { saveImages(); render(); }
-          };
-          img.src = ev.target.result;
-        };
-        reader.readAsDataURL(file);
-      });
+    async function uploadFiles(files) {
+      const formData = new FormData();
+      files.forEach(f => formData.append('images', f));
+      const res = await fetch('/api/images', { method: 'POST', body: formData });
+      const added = await res.json();
+      images.push(...added);
+      const max = getMax();
+      if (images.length > max) images = images.slice(images.length - max);
+      render();
+    }
+
+    async function loadServerImages() {
+      const res = await fetch('/api/images');
+      images = await res.json();
+      render();
     }
 
     maxImagesInput.addEventListener('change', () => {
       const max = getMax();
       if (images.length > max) {
         images = images.slice(images.length - max);
-        saveImages();
       }
       render();
     });
@@ -244,40 +240,13 @@
       return Math.max(1, isNaN(val) ? 19 : val);
     }
 
-    function saveImages() {
-      try {
-        const data = images.map(({ id, dataUrl, aspect, area }) => ({ id, dataUrl, aspect, area }));
-        localStorage.setItem('collage-images', JSON.stringify(data));
-      } catch (e) {
-        // localStorage may be full; silently ignore
-      }
+    function imageUrl(img) {
+      return '/uploads/' + img.filename;
     }
 
-    function loadSavedImages() {
-      try {
-        const raw = localStorage.getItem('collage-images');
-        if (!raw) return;
-        const data = JSON.parse(raw);
-        if (Array.isArray(data) && data.length > 0) {
-          images = data;
-          nextId = Math.max(...images.map(i => i.id)) + 1;
-        }
-      } catch (e) {
-        // corrupted data; start fresh
-      }
-    }
-
-    function addImage(dataUrl, aspect, area) {
-      const max = getMax();
-      images.push({ id: nextId++, dataUrl, aspect, area });
-      if (images.length > max) {
-        images = images.slice(images.length - max);
-      }
-    }
-
-    function removeImage(id) {
+    async function removeImage(id) {
+      await fetch('/api/images/' + id, { method: 'DELETE' });
       images = images.filter((img) => img.id !== id);
-      saveImages();
       render();
     }
 
@@ -345,7 +314,7 @@
 
           layout.push({
             id: img.id,
-            dataUrl: img.dataUrl,
+            src: imageUrl(img),
             x, y,
             width: itemWidth,
             height: rowHeight
@@ -377,7 +346,7 @@
       let html = '<div class="collage" style="position:relative;width:100%;height:' + vh + 'px;overflow:hidden">';
       layout.forEach((item) => {
         html += `<div class="collage-item" style="position:absolute;left:${item.x}px;top:${item.y}px;width:${item.width}px;height:${item.height}px">
-          <img src="${item.dataUrl}" alt="collage image">
+          <img src="${item.src}" alt="collage image">
           <button class="remove-btn" onclick="removeImage(${item.id})">&times;</button>
         </div>`;
       });
@@ -400,11 +369,10 @@
       e.preventDefault();
       const files = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith('image/'));
       if (!files.length) return;
-      loadImageFiles(files);
+      uploadFiles(files);
     });
 
-    loadSavedImages();
-    render();
+    loadServerImages();
   </script>
 </body>
 </html>
