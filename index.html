@@ -1,0 +1,335 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Image Collage</title>
+  <style>
+    *, *::before, *::after {
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      min-height: 100vh;
+    }
+
+    .controls {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 16px 24px;
+      background: #16213e;
+      border-bottom: 1px solid #0f3460;
+      flex-wrap: wrap;
+    }
+
+    .controls h1 {
+      font-size: 1.25rem;
+      font-weight: 600;
+      color: #e94560;
+      margin-right: auto;
+    }
+
+    .controls label {
+      font-size: 0.875rem;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+
+    .controls input[type="number"] {
+      width: 64px;
+      padding: 6px 8px;
+      border: 1px solid #0f3460;
+      border-radius: 6px;
+      background: #1a1a2e;
+      color: #e0e0e0;
+      font-size: 0.875rem;
+      text-align: center;
+    }
+
+    .upload-btn {
+      padding: 8px 20px;
+      background: #e94560;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 0.875rem;
+      font-weight: 500;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    .upload-btn:hover {
+      background: #c73652;
+    }
+
+    .clear-btn {
+      padding: 8px 16px;
+      background: transparent;
+      color: #e94560;
+      border: 1px solid #e94560;
+      border-radius: 6px;
+      font-size: 0.875rem;
+      cursor: pointer;
+      transition: background 0.2s, color 0.2s;
+    }
+
+    .clear-btn:hover {
+      background: #e94560;
+      color: #fff;
+    }
+
+    #file-input {
+      display: none;
+    }
+
+    .collage-container {
+      width: 100%;
+      min-height: calc(100vh - 61px);
+    }
+
+    .collage {
+      display: flex;
+      flex-wrap: wrap;
+      width: 100%;
+    }
+
+    .collage-item {
+      overflow: hidden;
+      position: relative;
+      background: #16213e;
+    }
+
+    .collage-item img {
+      display: block;
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .collage-item .remove-btn {
+      position: absolute;
+      top: 6px;
+      right: 6px;
+      width: 24px;
+      height: 24px;
+      background: rgba(0, 0, 0, 0.6);
+      color: #fff;
+      border: none;
+      border-radius: 50%;
+      font-size: 14px;
+      line-height: 24px;
+      text-align: center;
+      cursor: pointer;
+      opacity: 0;
+      transition: opacity 0.2s;
+    }
+
+    .collage-item:hover .remove-btn {
+      opacity: 1;
+    }
+
+    .empty-state {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: calc(100vh - 61px);
+      color: #555;
+      gap: 12px;
+    }
+
+    .empty-state svg {
+      width: 64px;
+      height: 64px;
+      opacity: 0.4;
+    }
+
+    .empty-state p {
+      font-size: 1rem;
+    }
+
+    .image-count {
+      font-size: 0.8rem;
+      color: #888;
+    }
+  </style>
+</head>
+<body>
+  <div class="controls">
+    <h1>Image Collage</h1>
+    <span class="image-count" id="image-count"></span>
+    <label>
+      Max images
+      <input type="number" id="max-images" min="1" max="50" value="6">
+    </label>
+    <button class="upload-btn" id="upload-btn">Upload Images</button>
+    <button class="clear-btn" id="clear-btn">Clear All</button>
+    <input type="file" id="file-input" accept="image/*" multiple>
+  </div>
+
+  <div class="collage-container" id="collage-container">
+    <div class="empty-state" id="empty-state">
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="1.5"
+          d="M2.25 15.75l5.159-5.159a2.25 2.25 0 013.182 0l5.159 5.159m-1.5-1.5l1.409-1.409a2.25 2.25 0 013.182 0l2.909 2.909M3.75 21h16.5A2.25 2.25 0 0022.5 18.75V5.25A2.25 2.25 0 0020.25 3H3.75A2.25 2.25 0 001.5 5.25v13.5A2.25 2.25 0 003.75 21z" />
+      </svg>
+      <p>Upload images to create a collage</p>
+    </div>
+  </div>
+
+  <script>
+    const fileInput = document.getElementById('file-input');
+    const uploadBtn = document.getElementById('upload-btn');
+    const clearBtn = document.getElementById('clear-btn');
+    const maxImagesInput = document.getElementById('max-images');
+    const collageContainer = document.getElementById('collage-container');
+    const emptyState = document.getElementById('empty-state');
+    const imageCountEl = document.getElementById('image-count');
+
+    // Each entry: { id, dataUrl }
+    let images = [];
+    let nextId = 0;
+
+    uploadBtn.addEventListener('click', () => fileInput.click());
+    clearBtn.addEventListener('click', () => {
+      images = [];
+      render();
+    });
+
+    fileInput.addEventListener('change', (e) => {
+      const files = Array.from(e.target.files);
+      if (!files.length) return;
+
+      let loaded = 0;
+      files.forEach((file) => {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          addImage(ev.target.result);
+          loaded++;
+          if (loaded === files.length) render();
+        };
+        reader.readAsDataURL(file);
+      });
+
+      fileInput.value = '';
+    });
+
+    maxImagesInput.addEventListener('change', () => {
+      const max = getMax();
+      if (images.length > max) {
+        images = images.slice(images.length - max);
+      }
+      render();
+    });
+
+    function getMax() {
+      const val = parseInt(maxImagesInput.value, 10);
+      return Math.max(1, isNaN(val) ? 6 : val);
+    }
+
+    function addImage(dataUrl) {
+      const max = getMax();
+      images.push({ id: nextId++, dataUrl });
+      if (images.length > max) {
+        images = images.slice(images.length - max);
+      }
+    }
+
+    function removeImage(id) {
+      images = images.filter((img) => img.id !== id);
+      render();
+    }
+
+    function computeLayout(count) {
+      // Determine rows/cols to fill a rectangle with minimal aspect-ratio distortion.
+      // Try to keep cells as square as possible given the viewport.
+      if (count === 0) return { cols: 0, rows: 0 };
+
+      const vw = window.innerWidth;
+      const vh = window.innerHeight - 61; // subtract controls height
+
+      let bestCols = 1;
+      let bestScore = Infinity;
+
+      for (let cols = 1; cols <= count; cols++) {
+        const rows = Math.ceil(count / cols);
+        const cellW = vw / cols;
+        const cellH = vh / rows;
+        const ratio = cellW / cellH;
+        // Score: how far from square (1:1)
+        const score = Math.abs(Math.log(ratio));
+        if (score < bestScore) {
+          bestScore = score;
+          bestCols = cols;
+        }
+      }
+
+      return { cols: bestCols, rows: Math.ceil(count / bestCols) };
+    }
+
+    function render() {
+      const count = images.length;
+      imageCountEl.textContent = count > 0 ? `${count} / ${getMax()}` : '';
+
+      if (count === 0) {
+        collageContainer.innerHTML = '';
+        collageContainer.appendChild(emptyState);
+        emptyState.style.display = 'flex';
+        return;
+      }
+
+      const { cols, rows } = computeLayout(count);
+      const cellWidthPct = 100 / cols;
+      const vh = window.innerHeight - 61;
+      const cellHeight = vh / rows;
+
+      let html = '<div class="collage">';
+      images.forEach((img) => {
+        html += `<div class="collage-item" style="width:${cellWidthPct}%;height:${cellHeight}px">
+          <img src="${img.dataUrl}" alt="collage image">
+          <button class="remove-btn" onclick="removeImage(${img.id})">&times;</button>
+        </div>`;
+      });
+      html += '</div>';
+
+      collageContainer.innerHTML = html;
+    }
+
+    window.addEventListener('resize', () => {
+      if (images.length > 0) render();
+    });
+
+    // Drag-and-drop support
+    document.body.addEventListener('dragover', (e) => {
+      e.preventDefault();
+      e.dataTransfer.dropEffect = 'copy';
+    });
+
+    document.body.addEventListener('drop', (e) => {
+      e.preventDefault();
+      const files = Array.from(e.dataTransfer.files).filter((f) => f.type.startsWith('image/'));
+      if (!files.length) return;
+
+      let loaded = 0;
+      files.forEach((file) => {
+        const reader = new FileReader();
+        reader.onload = (ev) => {
+          addImage(ev.target.result);
+          loaded++;
+          if (loaded === files.length) render();
+        };
+        reader.readAsDataURL(file);
+      });
+    });
+
+    render();
+  </script>
+</body>
+</html>
